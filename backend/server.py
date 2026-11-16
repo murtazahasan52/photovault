@@ -23,7 +23,8 @@ import httpx
 import numpy as np
 from dotenv import load_dotenv
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Query
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
+from pymongo.errors import PyMongoError, OperationFailure
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
@@ -342,9 +343,19 @@ _READY = {"done": False}
 
 @app.on_event("startup")
 async def startup():
+    """First-time setup (indexes + main admin). Never crashes the app:
+    if the database is unreachable or the login is wrong, it logs the reason
+    and is retried on the next request."""
     if _READY["done"]:
         return
-    _READY["done"] = True
+    try:
+        await _setup_db()
+        _READY["done"] = True
+    except Exception as e:
+        log.error("Database setup failed (check MONGO_URL user/password and Atlas Network Access): %s", e)
+
+
+async def _setup_db():
     try:
         await db.users.create_index("id", unique=True)
         await db.users.create_index("email", unique=True)
@@ -369,6 +380,30 @@ async def startup():
             "plan_expiry": "", "created_at": now_iso(),
         })
         log.info("Seeded main admin %s", ADMIN_EMAIL)
+
+
+@app.exception_handler(PyMongoError)
+async def mongo_error(_request, exc):
+    msg = str(exc)
+    if isinstance(exc, OperationFailure) and ("auth" in msg.lower()):
+        detail = "Database login failed — the password in MONGO_URL does not match the database user in MongoDB Atlas."
+    else:
+        detail = "Database is not reachable — check MONGO_URL and MongoDB Atlas Network Access (allow 0.0.0.0/0)."
+    log.error("MongoDB error: %s", msg)
+    return JSONResponse(status_code=503, content={"detail": detail})
+
+
+@api.get("/health")
+async def health():
+    """Checks the database connection (used after deploying)."""
+    try:
+        await db.command("ping")
+        admin = await db.users.count_documents({"role": "superadmin"})
+        return {"ok": True, "database": "connected", "db_name": DB_NAME, "main_admin_exists": bool(admin)}
+    except PyMongoError as e:
+        m = str(e)
+        reason = "authentication failed (wrong user/password in MONGO_URL)" if "auth" in m.lower() else "not reachable"
+        return JSONResponse(status_code=503, content={"ok": False, "database": reason, "db_name": DB_NAME})
 
 
 @api.get("/")
