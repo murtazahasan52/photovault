@@ -49,7 +49,7 @@ Create event → paste Drive link(s) → **Sync from Drive** → **Face index �
 After adding more photos to Drive: Sync again → Face index → Start (only new photos are processed).
 
 ## Deploy on Vercel
-See **DEPLOY-VERCEL.md**: one Vercel project (React site + FastAPI serverless API) with MongoDB Atlas. `vercel.json` and `api/index.py` are already set up.
+See **DEPLOY-VERCEL.md**: one Vercel project with two services (`frontend` React at `/`, `backend` FastAPI at `/api/*`) and MongoDB Atlas. `vercel.json` is already set up.
 
 ## Run locally
 

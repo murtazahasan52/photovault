@@ -1,11 +1,12 @@
 # Deploy PhotoVault on Vercel
 
-One Vercel project serves everything:
-- **Website** (React): built from `frontend/` and served as a static site
-- **API** (FastAPI): `api/index.py` runs as a Python serverless function for every `/api/*` request
+One Vercel project with **two services** (Vercel Services):
+- **frontend** (React, `frontend/`): public at `/` (all paths except `/api/*`), with fallback to `index.html` for `/admin`, `/e/...`, `/p/...`, `/live/...`
+- **backend** (FastAPI, `backend/server.py` → `app`): public at `/api/*`. It receives the full path (`/api/...`), which matches its routes.
 - **Database**: MongoDB Atlas (free M0 cluster is enough to start)
 
-Files that make this work: `vercel.json`, `api/index.py`, `requirements.txt` (root), `.vercelignore`.
+The browser calls the API on the same domain (`/api/...`), so no service bindings are needed: the backend never calls the frontend, and the static frontend has no server-side code.
+Files that make this work: `vercel.json` (services + rewrites), `backend/requirements.txt`, `backend/.python-version` (3.12), `.vercelignore`.
 
 ---
 
@@ -21,7 +22,7 @@ Unzip the project, then push it to a new GitHub repository (the root of the repo
 
 ## 3. Import into Vercel
 1. Open https://vercel.com/new → **Import** your GitHub repository.
-2. Framework preset: **Other**. Leave Root Directory as the repo root. Build/Output settings come from `vercel.json` automatically.
+2. Leave Root Directory as the repo root. Vercel reads the two services from `vercel.json`, so don't set a framework, build command or output directory in the dashboard.
 3. Open **Environment Variables** and add:
 
 | Name | Value |
@@ -39,17 +40,17 @@ Do **not** set `REACT_APP_BACKEND_URL`. The website and API share the same domai
 4. Click **Deploy**. Then open `https://<your-project>.vercel.app/admin` and log in with ADMIN_EMAIL / ADMIN_PASSWORD.
    The main admin account and database indexes are created automatically on the first request.
 
-**Alternative, using the CLI:** `npm i -g vercel` → in the project folder run `vercel` (first time, follow the prompts) → add the env vars in the dashboard → `vercel --prod`.
+**Alternative, using the CLI:** `npm i -g vercel` → in the project folder run `vercel` (first time, follow the prompts) → add the env vars in the dashboard → `vercel --prod`. Run both services locally with `vercel dev` (after `vercel login`).
 
 ## 4. Custom domain (optional)
 Vercel → Project → **Settings → Domains** → add `photos.yourstudio.com` → add the DNS record Vercel shows. Guest links, QR codes and booth links automatically use the domain the admin panel is opened on.
 
 ## Notes and limits
 - **Node.js version**: keep Vercel's default (latest). Old versions like 20.x are discontinued on Vercel.
-- **Function time**: `maxDuration` is 60 s in `vercel.json`. A Drive sync of a huge folder (thousands of files across many sub-folders) can take long. If it times out, sync the event again: it continues adding what's new. On Vercel Pro you can raise `maxDuration` to 300.
+- **Function time**: the backend runs on Fluid compute with Vercel's default time limit. A Drive sync of a huge folder can take long. If it ever times out, sync the event again: it continues adding what's new.
 - **Upload size**: Vercel accepts up to 4.5 MB per request. Live Booth photos are resized in the browser to 2048 px (about 1 MB), so they fit. Saving booth shots to Google Drive through the upload script is recommended anyway.
 - Photos and videos stay on Google Drive. Vercel and Atlas only store links, face fingerprints, guests, requests and payments, so the free tiers go a long way.
 - To update later, push to GitHub and Vercel redeploys automatically.
 
 ## Checked locally
-`vercel build` (Vercel CLI 65) completes: React build plus Python 3.12 function with `backend/server.py` bundled; `/api/*` is routed to the function and all other paths go to the React app (`/admin`, `/e/...`, `/p/...`, `/live/...`).
+`vercel build` (Vercel CLI 65) completes in services mode: the `frontend` service (create-react-app, static, SPA fallback) and the `backend` service (FastAPI, Python 3.12). Top-level routes send `/api/*` to `backend` with the original path kept, and everything else to `frontend`.
