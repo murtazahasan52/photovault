@@ -54,7 +54,7 @@ export default function EventForm({ event, onClose, onSaved }) {
     const url = f.drive_links[i].url;
     setTestMsg({ ...testMsg, [i]: "Checking…" });
     try {
-      const { data } = await api.post("/settings/test-drive", { url });
+      const { data } = await api.post("/settings/test-drive", { url, drive_ref: f.drive_links[i].drive_ref || "" });
       setTestMsg((t) => ({ ...t, [i]: "✅ " + data.message }));
     } catch (e) { setTestMsg((t) => ({ ...t, [i]: "❌ " + errMsg(e) })); }
   };

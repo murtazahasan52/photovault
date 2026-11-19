@@ -445,7 +445,8 @@ async def signup(body: SignupIn):
 @api.get("/auth/me")
 async def me(user: dict = Depends(get_user)):
     u = clean(user)
-    u["has_api_key"] = bool(await api_key_for(user["id"]))
+    u["has_api_key"] = bool(await api_key_for(user["id"])) or \
+        bool(await db.drives.count_documents({"owner_id": user["id"]}))  # Drive connected (script or key)
     return u
 
 
@@ -489,24 +490,114 @@ async def save_settings(body: SettingsIn, user: dict = Depends(get_user)):
 
 @api.post("/settings/test-drive")
 async def test_drive(body: Dict[str, Any] = None, user: dict = Depends(get_user)):
-    """Checks the API key. If a Drive link is given, also checks that link is readable."""
-    key = await api_key_for(user["id"])
-    if not key:
-        raise HTTPException(400, "No Google API key saved yet")
+    """Checks that a Drive link can be read (through the Drive script or the API key)."""
     url = (body or {}).get("url", "")
-    async with httpx.AsyncClient(timeout=20) as hc:
-        if url:
-            did = extract_drive_id(url)
-            if not did:
-                raise HTTPException(400, "That is not a Google Drive link")
-            meta = await drive_get(hc, did, key)
-            kind = "folder" if meta["mimeType"] == FOLDER_MIME else "file"
-            return {"ok": True, "message": f"Working ✓ — can read {kind} “{meta['name']}”"}
-        r = await hc.get(f"{DRIVE_API}/0000000000000000000000000000000", params={"key": key})
-    if r.status_code == 404:
-        return {"ok": True, "message": "Google Drive API key is working ✓"}
-    raise HTTPException(400, f"Google says: {drive_error(r)}")
+    async with httpx.AsyncClient(timeout=60) as hc:
+        rd = await reader_for(hc, user["id"], (body or {}).get("drive_ref", ""))
+        if not url:
+            if rd.script:
+                d = await rd._call("whoami")
+                return {"ok": True, "message": f"Drive script working ✓ ({d.get('email', '')})"}
+            r = await hc.get(f"{DRIVE_API}/0000000000000000000000000000000", params={"key": rd.key})
+            if r.status_code == 404:
+                return {"ok": True, "message": "Google Drive API key is working ✓"}
+            raise HTTPException(400, f"Google says: {drive_error(r)}")
+        did = extract_drive_id(url)
+        if not did:
+            raise HTTPException(400, "That is not a Google Drive link")
+        meta = await rd.meta(did)
+    kind = "folder" if meta["mimeType"] == FOLDER_MIME else "file"
+    return {"ok": True, "message": f"Working ✓ — can read {kind} “{meta['name']}”"}
 
+
+
+# ───────────────────────── Drive readers: Apps Script (no API key) or Google API key ─────────────────────────
+class DriveReader:
+    """Reads a photographer's Drive either through their own Google Apps Script web app
+    (no Google Cloud / API key needed) or through the Drive API with an API key."""
+
+    def __init__(self, hc: httpx.AsyncClient, key: str = "", script: str = "", secret: str = ""):
+        self.hc, self.key, self.script, self.secret = hc, key, script, secret
+
+    async def _call(self, action: str, **params) -> dict:
+        try:
+            r = await self.hc.get(self.script, params={"action": action, "secret": self.secret, **params},
+                                  follow_redirects=True, timeout=120)
+        except httpx.HTTPError as e:
+            raise HTTPException(400, f"Drive script not reachable: {e}")
+        try:
+            data = r.json()
+        except Exception:
+            raise HTTPException(400, "Drive script did not answer correctly — deploy it as a Web app with "
+                                     "'Execute as: Me' and 'Who has access: Anyone', and paste the URL ending in /exec")
+        if not data.get("ok"):
+            err = data.get("error", "error")
+            if "Wrong secret" in err:
+                raise HTTPException(400, "The secret does not match the SECRET written in the Drive script")
+            if "No item with the given ID" in err or "not found" in err.lower() or "Access denied" in err:
+                raise HTTPException(400, "Folder not found in this Google account — open the link with the same Gmail as the script")
+            raise HTTPException(400, f"Drive script error: {err}")
+        return data
+
+    async def meta(self, fid: str) -> dict:
+        if self.script:
+            return (await self._call("meta", id=fid))["item"]
+        return await drive_get(self.hc, fid, self.key)
+
+    async def tree(self, fid: str, album: str) -> List[dict]:
+        if self.script:
+            files = (await self._call("tree", id=fid, album=album))["files"]
+            for f in files:
+                f["_album"] = f.pop("album", album)
+            return files
+        out: List[dict] = []
+        await drive_list(self.hc, fid, self.key, album, out)
+        return out
+
+    async def children(self, fid: str):
+        """(meta, folders, files) of one folder."""
+        if self.script:
+            d = await self._call("list", id=fid)
+            return d["folder"], d.get("folders", []), d.get("files", [])
+        meta = await drive_get(self.hc, fid, self.key)
+        folders, files, token = [], [], None
+        while True:
+            params = {"q": f"'{fid}' in parents and trashed=false", "key": self.key, "pageSize": 1000,
+                      "supportsAllDrives": "true", "includeItemsFromAllDrives": "true", "orderBy": "folder,name",
+                      "fields": "nextPageToken,files(id,name,mimeType,modifiedTime)"}
+            if token:
+                params["pageToken"] = token
+            r = await self.hc.get(DRIVE_API, params=params)
+            if r.status_code != 200:
+                raise HTTPException(400, drive_error(r))
+            data = r.json()
+            for f in data.get("files", []):
+                (folders if f["mimeType"] == FOLDER_MIME else files).append(f)
+            token = data.get("nextPageToken")
+            if not token:
+                break
+        return meta, folders, files
+
+    async def share(self, fid: str) -> bool:
+        if not self.script:
+            return False
+        await self._call("share", id=fid)
+        return True
+
+
+async def reader_for(hc: httpx.AsyncClient, owner_id: str, drive_ref: str = "") -> DriveReader:
+    """Pick how to read this photographer's Drive: the linked Drive's script, else API key, else any Drive script."""
+    if drive_ref:
+        d = await db.drives.find_one({"id": drive_ref, "owner_id": owner_id})
+        if d and d.get("upload_script_url"):
+            return DriveReader(hc, script=d["upload_script_url"], secret=d.get("upload_secret", ""))
+    key = await api_key_for(owner_id)
+    if key:
+        return DriveReader(hc, key=key)
+    d = await db.drives.find_one({"owner_id": owner_id, "upload_script_url": {"$nin": [None, ""]}})
+    if d:
+        return DriveReader(hc, script=d["upload_script_url"], secret=d.get("upload_secret", ""))
+    raise HTTPException(400, "Connect a Google Drive first: open My Drives → Add Drive and paste your Drive script link")
 
 # ───────────────────────── photographer-wise Google Drives ─────────────────────────
 class DriveIn(BaseModel):
@@ -514,8 +605,14 @@ class DriveIn(BaseModel):
     email: str = ""
     root_url: str
     notes: str = ""
-    upload_script_url: str = ""   # Google Apps Script web-app URL used by Live Booth to save shots into this Drive
+    upload_script_url: str = ""   # the photographer's "PhotoVault Drive script" web-app URL (reads folders + Live Booth uploads)
     upload_secret: str = ""
+    auto_share: bool = True       # let the script share the main folder as "anyone with the link can view"
+
+
+class ScriptCheckIn(BaseModel):
+    url: str
+    secret: str = ""
 
 
 class ApiKeyIn(BaseModel):
@@ -536,6 +633,7 @@ async def drive_owner(user: dict, uid: str = "") -> dict:
 
 async def drive_view(d: dict) -> dict:
     d = clean(d)
+    d["method"] = "script" if d.get("upload_script_url") else "api_key"
     d["event_count"] = await db.events.count_documents({"drive_links.drive_ref": d["id"]})
     return d
 
@@ -550,28 +648,36 @@ async def list_drives(uid: str = "", user: dict = Depends(get_user)):
         "has_own_key": bool(key),
         "key_masked": (key[:6] + "…" + key[-4:]) if key else "",
         "has_any_key": bool(await api_key_for(owner["id"])),
+        "has_script": any(x.get("upload_script_url") for x in items),
         "owner": {"id": owner["id"], "name": owner.get("name", ""), "studio": (owner.get("studio") or {}).get("name", "")},
     }
 
 
-async def check_root(owner_id: str, url: str) -> dict:
+async def check_root(owner_id: str, url: str, script: str = "", secret: str = "", share: bool = False) -> dict:
     did = extract_drive_id(url)
     if not did:
         raise HTTPException(400, "That is not a Google Drive folder link")
-    key = await api_key_for(owner_id)
-    if not key:
-        raise HTTPException(400, "Save the Google API key first (step 1 on this page)")
-    async with httpx.AsyncClient(timeout=20) as hc:
-        meta = await drive_get(hc, did, key)
-    if meta["mimeType"] != FOLDER_MIME:
-        raise HTTPException(400, "This link is a single file. Please paste a FOLDER link.")
+    async with httpx.AsyncClient(timeout=60) as hc:
+        if script:
+            rd = DriveReader(hc, script=script, secret=secret)
+        else:
+            key = await api_key_for(owner_id)
+            if not key:
+                raise HTTPException(400, "Paste the Drive script link (see the guide on this page)")
+            rd = DriveReader(hc, key=key)
+        meta = await rd.meta(did)
+        if meta["mimeType"] != FOLDER_MIME:
+            raise HTTPException(400, "This link is a single file. Please paste a FOLDER link.")
+        if share and script:
+            await rd.share(meta["id"])
     return meta
 
 
 @api.post("/drives")
 async def add_drive(body: DriveIn, uid: str = "", user: dict = Depends(get_user)):
     owner = await drive_owner(user, uid)
-    meta = await check_root(owner["id"], body.root_url)
+    meta = await check_root(owner["id"], body.root_url, body.upload_script_url.strip(), body.upload_secret.strip(),
+                            share=body.auto_share)
     if await db.drives.find_one({"owner_id": owner["id"], "root_id": meta["id"]}):
         raise HTTPException(400, "This folder is already added")
     d = {"id": new_id(), "owner_id": owner["id"], "label": body.label.strip() or meta["name"],
@@ -589,8 +695,11 @@ async def edit_drive(did: str, body: DriveIn, user: dict = Depends(get_user)):
         raise HTTPException(404, "Drive not found")
     upd = {"label": body.label.strip() or d["label"], "email": body.email.strip(), "notes": body.notes,
            "upload_script_url": body.upload_script_url.strip(), "upload_secret": body.upload_secret.strip()}
-    if body.root_url.strip() and body.root_url.strip() != d["root_url"]:
-        meta = await check_root(d["owner_id"], body.root_url)
+    script_changed = body.upload_script_url.strip() != (d.get("upload_script_url") or "") or \
+        body.upload_secret.strip() != (d.get("upload_secret") or "")
+    if (body.root_url.strip() and body.root_url.strip() != d["root_url"]) or script_changed:
+        meta = await check_root(d["owner_id"], body.root_url.strip() or d["root_url"], body.upload_script_url.strip(),
+                                body.upload_secret.strip(), share=body.auto_share)
         upd.update({"root_url": body.root_url.strip(), "root_id": meta["id"], "root_name": meta["name"]})
     await db.drives.update_one({"id": did}, {"$set": upd})
     return await drive_view(await db.drives.find_one({"id": did}))
@@ -607,7 +716,7 @@ async def test_drive_conn(did: str, user: dict = Depends(get_user)):
     d = await db.drives.find_one({"id": did, **scope(user)})
     if not d:
         raise HTTPException(404, "Drive not found")
-    meta = await check_root(d["owner_id"], d["root_url"])
+    meta = await check_root(d["owner_id"], d["root_url"], d.get("upload_script_url", ""), d.get("upload_secret", ""))
     await db.drives.update_one({"id": did}, {"$set": {"last_checked": now_iso(), "root_name": meta["name"]}})
     return {"ok": True, "message": f"Connected ✓ — reading folder “{meta['name']}”"}
 
@@ -618,36 +727,22 @@ async def browse_drive(did: str, folder_id: str = "", user: dict = Depends(get_u
     d = await db.drives.find_one({"id": did, **scope(user)})
     if not d:
         raise HTTPException(404, "Drive not found")
-    key = await api_key_for(d["owner_id"])
-    if not key:
-        raise HTTPException(400, "Google API key missing")
     fid = folder_id or d["root_id"]
     folders, photos, videos, sample = [], 0, 0, []
-    async with httpx.AsyncClient(timeout=40) as hc:
-        meta = await drive_get(hc, fid, key)
-        token = None
-        while True:
-            params = {"q": f"'{fid}' in parents and trashed=false", "key": key, "pageSize": 1000,
-                      "supportsAllDrives": "true", "includeItemsFromAllDrives": "true", "orderBy": "folder,name",
-                      "fields": "nextPageToken,files(id,name,mimeType,modifiedTime)"}
-            if token:
-                params["pageToken"] = token
-            r = await hc.get(DRIVE_API, params=params)
-            if r.status_code != 200:
-                raise HTTPException(400, drive_error(r))
-            data = r.json()
-            for f in data.get("files", []):
-                if f["mimeType"] == FOLDER_MIME:
-                    folders.append({"id": f["id"], "name": f["name"], "modified": f.get("modifiedTime", "")})
-                elif media_type(f["mimeType"]) == "photo":
-                    photos += 1
-                    if len(sample) < 6:
-                        sample.append(f["id"])
-                elif media_type(f["mimeType"]) == "video":
-                    videos += 1
-            token = data.get("nextPageToken")
-            if not token:
-                break
+    async with httpx.AsyncClient(timeout=120) as hc:
+        rd = await reader_for(hc, d["owner_id"], d["id"])
+        meta, fl, files = await rd.children(fid)
+    for f in fl:
+        folders.append({"id": f["id"], "name": f["name"], "modified": f.get("modifiedTime", "")})
+    folders.sort(key=lambda x: x["name"].lower())
+    for f in files:
+        t = media_type(f.get("mimeType", ""))
+        if t == "photo":
+            photos += 1
+            if len(sample) < 6:
+                sample.append(f["id"])
+        elif t == "video":
+            videos += 1
     used = {}
     async for ev in db.events.find({"owner_id": d["owner_id"]}, {"id": 1, "name": 1, "drive_links": 1}):
         for l in ev.get("drive_links", []):
@@ -658,6 +753,14 @@ async def browse_drive(did: str, folder_id: str = "", user: dict = Depends(get_u
     return {"folder": {"id": meta["id"], "name": meta["name"], "url": f"https://drive.google.com/drive/folders/{meta['id']}",
                        "events": used.get(meta["id"], [])},
             "folders": folders, "photos": photos, "videos": videos, "sample": sample}
+
+
+@api.post("/drives/check-script")
+async def check_script(body: ScriptCheckIn, user: dict = Depends(get_user)):
+    """Test a Drive script link + secret before saving it."""
+    async with httpx.AsyncClient(timeout=60) as hc:
+        data = await DriveReader(hc, script=body.url.strip(), secret=body.secret.strip())._call("whoami")
+    return {"ok": True, "message": f"Script working ✓ — connected to {data.get('email') or 'your Google account'}"}
 
 
 @api.put("/admin/photographers/{uid}/api-key")
@@ -902,20 +1005,18 @@ async def drive_list(hc: httpx.AsyncClient, folder_id: str, key: str, album: str
 @api.post("/events/{eid}/sync")
 async def sync_event(eid: str, user: dict = Depends(get_user)):
     ev = await own_event(eid, user)
-    key = await api_key_for(ev["owner_id"])
-    if not key:
-        raise HTTPException(400, "Add your Google API key in Settings first")
     if not ev.get("drive_links"):
         raise HTTPException(400, "Add at least one Google Drive link to this event")
 
     found: List[dict] = []
     errors = []
-    async with httpx.AsyncClient(timeout=60) as hc:
+    async with httpx.AsyncClient(timeout=120) as hc:
         for link in ev["drive_links"]:
             try:
-                meta = await drive_get(hc, link["drive_id"], key)
+                rd = await reader_for(hc, ev["owner_id"], link.get("drive_ref", ""))
+                meta = await rd.meta(link["drive_id"])
                 if meta["mimeType"] == FOLDER_MIME:
-                    await drive_list(hc, meta["id"], key, link["label"], found)
+                    found.extend(await rd.tree(meta["id"], link["label"]))
                 elif media_type(meta["mimeType"]):
                     meta["_album"] = link["label"]
                     found.append(meta)

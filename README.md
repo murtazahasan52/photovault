@@ -35,14 +35,11 @@ server only stores small records (events, Drive file IDs, face fingerprints, gue
 
 ## Setup
 
-### 1. Google API key (free, one time)
-1. https://console.cloud.google.com/apis/library/drive.googleapis.com → **Enable** (create a project if asked)
-2. https://console.cloud.google.com/apis/credentials → **Create credentials → API key**
-3. Restrict the key to **Google Drive API** (recommended)
-4. Paste in **Admin → My Drives → Step 1** (or set `GOOGLE_API_KEY` in backend `.env` for all photographers)
-
-### 2. Drive folders
-Share each event folder: **Share → General access → Anyone with the link → Viewer**. Paste the folder link into the event.
+### 1. Connect Google Drive (no Google Cloud needed)
+Each photographer opens **My Drives → ＋ Add Drive**, pastes the main folder link, copies the **PhotoVault Drive script**,
+deploys it at script.google.com as a Web app (Execute as: Me, access: Anyone) and pastes the Web app URL.
+The main folder is shared for guests automatically. Full steps: HOW-TO-ADD-GOOGLE-DRIVE.md.
+(Optional advanced alternative: a Google Drive API key, under My Drives → Advanced, or `GOOGLE_API_KEY` in backend env.)
 
 ### 3. Workflow per event
 Create event → paste Drive link(s) → **Sync from Drive** → **Face index → Start** → **Share** the link / QR.
@@ -75,7 +72,7 @@ All API routes are under `/api`.
 | MONGO_URL, DB_NAME | MongoDB connection |
 | JWT_SECRET | long random string |
 | ADMIN_EMAIL, ADMIN_PASSWORD | main admin created on first start |
-| GOOGLE_API_KEY | optional shared Drive API key |
+| GOOGLE_API_KEY | optional shared Drive API key (not needed with the Drive script) |
 | ALLOW_SIGNUP | `true` = photographers can self-register |
 | CORS_ORIGINS | default `*` |
 

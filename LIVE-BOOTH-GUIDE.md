@@ -12,15 +12,15 @@ Every booth photo is also face-indexed, so it shows up in the guest's selfie sea
 
 ## 1. Choose where photos are saved (once per Gmail)
 **Recommended: your Google Drive** (no load on the server)
-1. My Drives → **Edit** on a Drive → open **Live Booth upload script**.
-2. Click **Generate secret** → **Copy script**.
+1. The **PhotoVault Drive script** you set up in My Drives also saves booth photos. If the Drive card says "✓ Drive script", nothing more is needed. Otherwise: My Drives → **Edit** on the Drive → **Drive script**.
+2. Click **📋 Copy script**.
 3. Open https://script.google.com → **New project** (logged in with that Drive's Gmail) → delete the sample code → paste → 💾 Save (name it "PhotoVault Booth").
 4. **Deploy → New deployment** → type **Web app** → Execute as **Me** → Who has access **Anyone** → **Deploy**.
 5. **Authorize access** → pick the Gmail → **Advanced → Go to PhotoVault Booth (unsafe) → Allow**. Google shows this warning because it's your own unpublished script.
 6. Copy the **Web app URL** (ends with `/exec`) → paste it → **Test** → **Save**.
 
 Photos are saved in Drive under `PhotoVault Live Booth / <Event name>` and shared "anyone with the link".
-(The same script code is in `google-apps-script/PhotoVaultBoothUpload.gs`.)
+(The same script code is in `google-apps-script/PhotoVaultDriveScript.gs`.)
 
 **Fallback: the server.** If no script is set (or Drive upload fails), shots are kept on the server, resized to 2048 px (about 0.5 MB each).
 

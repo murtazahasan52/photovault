@@ -4,57 +4,50 @@ import { api, errMsg, fmtDate } from "../../lib/api";
 import { Loader, Modal } from "../../components/ui";
 import DriveBrowser from "../../components/DriveBrowser";
 import { useAuth } from "../../App";
-import { BOOTH_SCRIPT, pingScript } from "../../lib/boothScript";
+import { scriptWithSecret, newSecret } from "../../lib/boothScript";
 
 export function HowToAddDrive({ open: initialOpen = true }) {
   const [open, setOpen] = useState(initialOpen);
   return (
     <div className="card" style={{ borderColor: "#ecd9a6", background: "#fffcf3" }}>
       <div className="row" style={{ justifyContent: "space-between", cursor: "pointer" }} onClick={() => setOpen(!open)}>
-        <h3 style={{ margin: 0 }}>📘 How to add your Google Drive (5 minutes, one time)</h3>
+        <h3 style={{ margin: 0 }}>📘 How to connect your Google Drive (about 5 minutes, once per Gmail)</h3>
         <span className="small muted">{open ? "Hide ▲" : "Show ▼"}</span>
       </div>
       {open && (
         <div className="howto">
+          <div className="note" style={{ marginBottom: 6 }}>
+            No Google Cloud Console and no API key needed — you only paste a small script into <b>script.google.com</b> with the same Gmail where your photos are.
+          </div>
           <div className="step"><span className="num">1</span><div>
-            <b>Get a free Google API key</b> (once per photographer — it works for all your Drives)
+            <b>Make one main folder in Google Drive</b>
             <ol>
-              <li>Open <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer">console.cloud.google.com</a> and log in with any Gmail.</li>
-              <li>Top bar → <b>Select a project → New project</b> → name it “PhotoVault” → <b>Create</b>.</li>
-              <li>Open <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noreferrer">Google Drive API</a> → click <b>Enable</b>.</li>
-              <li>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">Credentials</a> → <b>+ Create credentials → API key</b> → copy the key (starts with <code>AIza…</code>).</li>
-              <li>(Recommended) Click the key → <b>API restrictions → Restrict key → Google Drive API</b> → Save.</li>
-              <li>Paste it in <b>Step 1</b> below and click <b>Save & test</b>. No billing / card is needed.</li>
+              <li>Open <a href="https://drive.google.com" target="_blank" rel="noreferrer">drive.google.com</a> with the Gmail where your photos are.</li>
+              <li><b>+ New → New folder</b> → e.g. <code>Studio Events 2026</code>. Inside it, one folder per event (sub-folders like <code>Haldi</code>, <code>Wedding</code> become albums).</li>
+              <li>Open the main folder and copy its link from the address bar (it looks like <code>drive.google.com/drive/folders/…</code>).</li>
             </ol>
           </div></div>
           <div className="step"><span className="num">2</span><div>
-            <b>Make one main folder in each Google Drive</b>
-            <ol>
-              <li>Open <a href="https://drive.google.com" target="_blank" rel="noreferrer">drive.google.com</a> with the Gmail where your photos are.</li>
-              <li><b>+ New → New folder</b> → name it e.g. <code>Studio Events 2026</code>.</li>
-              <li>Inside it make one folder per event (e.g. <code>Rahul Priya Wedding</code>) and, if you like, sub-folders per function (<code>Haldi</code>, <code>Wedding</code>, <code>Reception</code>). Upload photos & videos there as usual.</li>
-            </ol>
+            <b>Click “＋ Add Drive” below</b> — paste the folder link, then click <b>Generate secret</b> and <b>📋 Copy script</b>.
           </div></div>
           <div className="step"><span className="num">3</span><div>
-            <b>Share the main folder as “Anyone with the link”</b>
+            <b>Create the script</b>
             <ol>
-              <li>Right-click the main folder → <b>Share</b> → <b>Share</b>.</li>
-              <li>Under <b>General access</b> change “Restricted” to <b>Anyone with the link</b>, role <b>Viewer</b>.</li>
-              <li>Click <b>Copy link</b> → <b>Done</b>. (Everything inside the folder is covered automatically — no need to share each event.)</li>
+              <li>Open <a href="https://script.google.com/home/projects/create" target="_blank" rel="noreferrer">script.google.com → New project</a> (same Gmail as the photos).</li>
+              <li>Delete the sample code, paste the copied script, click 💾 <b>Save</b> and name it “PhotoVault Drive”.</li>
+              <li><b>Deploy → New deployment</b> → ⚙️ select type <b>Web app</b> → Execute as: <b>Me</b> → Who has access: <b>Anyone</b> → <b>Deploy</b>.</li>
+              <li>Click <b>Authorize access</b> → choose the Gmail → <b>Advanced → Go to PhotoVault Drive (unsafe)</b> → <b>Allow</b>. (Google shows this warning because it is your own script.)</li>
+              <li>Copy the <b>Web app URL</b> (ends with <code>/exec</code>).</li>
             </ol>
           </div></div>
           <div className="step"><span className="num">4</span><div>
-            <b>Add the Drive here</b> — click <b>＋ Add Drive</b> below, give it a name (e.g. “Main Gmail”), the Gmail ID (for your reference) and paste the folder link. The app checks it instantly.
-            <div className="small muted" style={{ marginTop: 4 }}>Have photos in more than one Gmail (15 GB free each)? Repeat steps 2–4 for every account. One API key is enough.</div>
+            <b>Paste the Web app URL</b> in the Add Drive form → <b>Test</b> → <b>Check &amp; add Drive</b>.
+            The main folder is shared as “Anyone with the link → Viewer” automatically, so guests can see their photos.
+            <div className="small muted" style={{ marginTop: 4 }}>Photos in more than one Gmail? Repeat for every account (each Gmail gets its own script).</div>
           </div></div>
           <div className="step"><span className="num">5</span><div>
-            <b>Create events straight from your Drive</b> — click <b>Browse folders</b> on a Drive, open the event folder and click <b>＋ Create event</b>.
-            Then on the event: <b>Sync from Drive → Face index → Share</b>.
-          </div></div>
-          <div className="step"><span className="num">6</span><div>
-            <b>(Optional) Live Booth — instant photo + QR on stage</b>: to save booth shots straight into this Drive, add the small
-            <b> upload script</b> once per Gmail. Click <b>Edit</b> on the Drive → <b>Live Booth upload script</b> and follow the 6 short steps shown there.
-            Without it, booth shots are kept on the server instead.
+            <b>Create events from your Drive</b> — <b>📂 Browse folders</b> → open the event folder → <b>＋ Create event</b>. Then on the event: <b>Sync from Drive → Face index → Share</b>.
+            The same script also saves <b>Live Booth</b> photos into this Drive.
           </div></div>
           <div className="note" style={{ marginTop: 10, marginBottom: 0 }}>
             🔒 Photos are never copied to our server. Only people with an event link can find them, and guests only see the photos they are in unless you approve full access.
@@ -65,7 +58,7 @@ export function HowToAddDrive({ open: initialOpen = true }) {
   );
 }
 
-const blank = { label: "", email: "", root_url: "", notes: "", upload_script_url: "", upload_secret: "" };
+const blank = { label: "", email: "", root_url: "", notes: "", upload_script_url: "", upload_secret: "", auto_share: true };
 
 /** Manage Drives for the logged-in photographer, or (main admin) for photographer `uid`. */
 export function DrivesManager({ uid = "", embedded = false }) {
@@ -74,6 +67,7 @@ export function DrivesManager({ uid = "", embedded = false }) {
   const [d, setD] = useState(null);
   const [key, setKey] = useState("");
   const [keyMsg, setKeyMsg] = useState(null);
+  const [showKey, setShowKey] = useState(false);
   const [edit, setEdit] = useState(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -90,18 +84,15 @@ export function DrivesManager({ uid = "", embedded = false }) {
     setKeyMsg(null);
     try {
       if (forOther) await api.put(`/admin/photographers/${uid}/api-key`, { google_api_key: key });
-      else {
-        await api.put("/settings", { google_api_key: key });
-        const t = await api.post("/settings/test-drive", {});
-        setKeyMsg({ ok: true, t: t.data.message });
-      }
-      if (forOther) setKeyMsg({ ok: true, t: "Key saved ✓" });
-      setKey(""); load(); refresh();
+      else await api.put("/settings", { google_api_key: key });
+      setKeyMsg({ ok: true, t: "Key saved ✓" }); setKey(""); load(); refresh();
     } catch (e) { setKeyMsg({ ok: false, t: errMsg(e) }); }
   };
 
   const save = async (e) => {
-    e.preventDefault(); setErr(""); setBusy(true);
+    e.preventDefault(); setErr("");
+    if (!edit.upload_script_url.trim() && !d.has_any_key) { setErr("Paste the Drive script Web app URL (step 3 of the guide)."); return; }
+    setBusy(true);
     try {
       if (edit.id) await api.put(`/drives/${edit.id}`, edit);
       else await api.post("/drives", edit, q);
@@ -124,32 +115,18 @@ export function DrivesManager({ uid = "", embedded = false }) {
   };
 
   if (!d) return <Loader />;
-  const noKey = !d.has_any_key;
 
   return (
     <div>
       {!embedded && <HowToAddDrive open={d.drives.length === 0} />}
 
       <div className="card">
-        <h3><span className="stepnum">1</span> Google API key {forOther ? `for ${d.owner.name}` : ""}</h3>
-        {d.has_own_key ? <div className="okmsg">✓ Key saved: {d.key_masked}</div>
-          : d.has_any_key ? <div className="note">Using the shared key set by the main admin. You can add your own below (optional).</div>
-          : <div className="err">No API key yet — follow step 1 of the guide above.</div>}
-        <div className="row">
-          <input className="input" style={{ maxWidth: 420 }} placeholder="Paste API key (AIza…)" value={key} onChange={(e) => setKey(e.target.value)} />
-          <button className="btn primary" onClick={saveKey} disabled={!key}>Save & test</button>
-        </div>
-        {keyMsg && <div className={keyMsg.ok ? "okmsg" : "err"} style={{ marginTop: 10, marginBottom: 0 }}>{keyMsg.t}</div>}
-      </div>
-
-      <div className="card">
         <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
-          <h3 style={{ margin: 0 }}><span className="stepnum">2</span> Google Drives ({d.drives.length})</h3>
-          <button className="btn gold" disabled={noKey} onClick={() => { setErr(""); setEdit({ ...blank }); }}>＋ Add Drive</button>
+          <h3 style={{ margin: 0 }}>🗂️ Google Drives {forOther ? `of ${d.owner.name}` : ""} ({d.drives.length})</h3>
+          <button className="btn gold" onClick={() => { setErr(""); setEdit({ ...blank, upload_secret: newSecret() }); }}>＋ Add Drive</button>
         </div>
-        {noKey && <div className="small muted" style={{ marginBottom: 8 }}>Save the API key first, then add Drives.</div>}
         {d.drives.length === 0 ? (
-          <div className="empty">No Drives added yet. Click <b>＋ Add Drive</b> and paste your main folder link.</div>
+          <div className="empty">No Drives yet. Click <b>＋ Add Drive</b> and follow the guide above — no Google Cloud account needed.</div>
         ) : (
           <div className="drive-grid">
             {d.drives.map((dr) => (
@@ -165,16 +142,16 @@ export function DrivesManager({ uid = "", embedded = false }) {
                   Main folder: <b>{dr.root_name}</b><br />
                   <span className="muted">{dr.event_count} event link(s) · checked {fmtDate(dr.last_checked)}</span>
                   {dr.notes && <div className="muted">{dr.notes}</div>}
-                  <div style={{ marginTop: 4 }}>Live Booth uploads: {dr.upload_script_url
-                    ? <b style={{ color: "var(--ok)" }}>✓ script connected</b>
-                    : <span className="muted">not set (<a href="#e" onClick={(e) => { e.preventDefault(); setErr(""); setEdit({ ...blank, ...dr }); }}>add script</a>)</span>}</div>
+                  <div style={{ marginTop: 4 }}>Connection: {dr.upload_script_url
+                    ? <b style={{ color: "var(--ok)" }}>✓ Drive script (reads folders + Live Booth)</b>
+                    : <span className="muted">API key only — <a href="#e" onClick={(e) => { e.preventDefault(); setErr(""); setEdit({ ...blank, ...dr, upload_secret: dr.upload_secret || newSecret() }); }}>add the Drive script</a> for Live Booth</span>}</div>
                 </div>
                 {testMsg[dr.id] && <div className="small" style={{ marginBottom: 8 }}>{testMsg[dr.id]}</div>}
                 <div className="row">
                   {!forOther && <button className="btn sm gold" onClick={() => setBrowse(dr)}>📂 Browse folders</button>}
                   <button className="btn sm" onClick={() => test(dr)}>Test</button>
                   <a className="btn sm" href={dr.root_url} target="_blank" rel="noreferrer">Open in Drive ↗</a>
-                  <button className="btn sm" onClick={() => { setErr(""); setEdit({ ...blank, ...dr }); }}>Edit</button>
+                  <button className="btn sm" onClick={() => { setErr(""); setEdit({ ...blank, ...dr, upload_secret: dr.upload_secret || newSecret() }); }}>Edit</button>
                   <button className="btn sm danger" onClick={() => del(dr)}>Remove</button>
                 </div>
               </div>
@@ -183,8 +160,24 @@ export function DrivesManager({ uid = "", embedded = false }) {
         )}
       </div>
 
+      <div className="card">
+        <div className="row" style={{ justifyContent: "space-between", cursor: "pointer" }} onClick={() => setShowKey(!showKey)}>
+          <b className="small">⚙️ Advanced: Google API key (optional — not needed when you use the Drive script)</b>
+          <span className="small muted">{showKey ? "▲" : "▼"}</span>
+        </div>
+        {showKey && <div style={{ marginTop: 10 }}>
+          {d.has_own_key ? <div className="okmsg">✓ Key saved: {d.key_masked}</div>
+            : d.has_any_key ? <div className="note">A shared key from the main admin is in use.</div> : <div className="small muted" style={{ marginBottom: 8 }}>No API key — that's fine when the Drive script is set up.</div>}
+          <div className="row">
+            <input className="input" style={{ maxWidth: 420 }} placeholder="AIza… (from Google Cloud Console)" value={key} onChange={(e) => setKey(e.target.value)} />
+            <button className="btn" onClick={saveKey} disabled={!key}>Save key</button>
+          </div>
+          {keyMsg && <div className={keyMsg.ok ? "okmsg" : "err"} style={{ marginTop: 10, marginBottom: 0 }}>{keyMsg.t}</div>}
+        </div>}
+      </div>
+
       {edit && (
-        <Modal title={edit.id ? "Edit Drive" : "Add a Google Drive"} onClose={() => setEdit(null)}>
+        <Modal title={edit.id ? "Edit Drive" : "Add a Google Drive"} onClose={() => setEdit(null)} wide>
           <form onSubmit={save}>
             {err && <div className="err">{err}</div>}
             <div className="grid2">
@@ -193,10 +186,10 @@ export function DrivesManager({ uid = "", embedded = false }) {
             </div>
             <div className="field"><label className="lbl">Main folder link *</label>
               <input className="input" required value={edit.root_url} onChange={(e) => setEdit({ ...edit, root_url: e.target.value })} placeholder="https://drive.google.com/drive/folders/…" />
-              <div className="small muted" style={{ marginTop: 4 }}>Folder must be shared as <b>Anyone with the link → Viewer</b> (guide step 3).</div>
             </div>
-            <div className="field"><label className="lbl">Notes</label><input className="input" value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} placeholder="e.g. 2026 weddings, 2 TB plan" /></div>
             <ScriptSetup edit={edit} setEdit={setEdit} />
+            <label className="switch"><input type="checkbox" checked={edit.auto_share !== false} onChange={(e) => setEdit({ ...edit, auto_share: e.target.checked })} /> Share the main folder as “Anyone with the link → Viewer” automatically (needed so guests can see photos)</label>
+            <div className="field"><label className="lbl">Notes</label><input className="input" value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} placeholder="e.g. 2026 weddings, 2 TB plan" /></div>
             <div className="row" style={{ justifyContent: "flex-end" }}>
               <button type="button" className="btn" onClick={() => setEdit(null)}>Cancel</button>
               <button className="btn primary" disabled={busy}>{busy ? "Checking folder…" : edit.id ? "Save" : "Check & add Drive"}</button>
@@ -211,48 +204,50 @@ export function DrivesManager({ uid = "", embedded = false }) {
   );
 }
 
-function ScriptSetup({ edit, setEdit }) {
-  const [open, setOpen] = useState(!!edit.upload_script_url);
+/** Secret + copy script + Web app URL + test. Used by My Drives and the Add photographer form. */
+export function ScriptSetup({ edit, setEdit, urlKey = "upload_script_url", secretKey = "upload_secret" }) {
   const [copied, setCopied] = useState(false);
   const [ping, setPing] = useState("");
-  const secret = edit.upload_secret || "";
-  const code = BOOTH_SCRIPT.replace("CHANGE-ME-123", secret || "CHANGE-ME-123");
-  const genSecret = () => setEdit({ ...edit, upload_secret: "pv-" + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6) });
-  const copy = () => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 1500); };
+  const [show, setShow] = useState(false);
+  const secret = edit[secretKey] || "";
+  const url = edit[urlKey] || "";
+  const code = scriptWithSecret(secret);
+  const copy = () => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 1800); };
   const test = async () => {
     setPing("Checking…");
-    try { await pingScript(edit.upload_script_url); setPing("✅ Script is reachable"); } catch (e) { setPing("❌ " + e.message + " — check the URL ends with /exec and access is “Anyone”."); }
+    try { const { data } = await api.post("/drives/check-script", { url, secret }); setPing("✅ " + data.message); }
+    catch (e) { setPing("❌ " + errMsg(e)); }
   };
   return (
     <div className="card" style={{ background: "var(--bg)", marginTop: 4 }}>
-      <div className="row" style={{ justifyContent: "space-between", cursor: "pointer" }} onClick={() => setOpen(!open)}>
-        <b>🔴 Live Booth upload script (optional)</b><span className="small muted">{open ? "▲" : "▼"}</span>
-      </div>
-      {open && <>
-        <p className="small muted">Lets the Live Booth save each stage photo straight into THIS Google Drive (no load on the server). Do it once per Gmail:</p>
-        <ol className="small" style={{ lineHeight: 1.8, paddingLeft: 18, marginTop: 0 }}>
-          <li>Click <b>Generate secret</b> below, then <b>Copy script</b>.</li>
-          <li>Open <a href="https://script.google.com/home/projects/create" target="_blank" rel="noreferrer">script.google.com → New project</a> while logged in with <b>this Drive's Gmail</b>.</li>
-          <li>Delete the sample code, paste the script, click 💾 <b>Save</b> (name it “PhotoVault Booth”).</li>
-          <li><b>Deploy → New deployment</b> → ⚙️ type <b>Web app</b> → Execute as: <b>Me</b> → Who has access: <b>Anyone</b> → <b>Deploy</b>.</li>
-          <li>Click <b>Authorize access</b> → choose the Gmail → <b>Advanced → Go to PhotoVault Booth (unsafe)</b> → <b>Allow</b>. (It's your own script, so Google shows this warning.)</li>
-          <li>Copy the <b>Web app URL</b> (ends with <code>/exec</code>), paste it below and click <b>Test</b>.</li>
-        </ol>
-        <div className="grid2">
-          <div className="field"><label className="lbl">Secret</label>
-            <div className="row" style={{ flexWrap: "nowrap" }}><input className="input" value={secret} onChange={(e) => setEdit({ ...edit, upload_secret: e.target.value })} placeholder="any password-like text" />
-              <button type="button" className="btn sm" onClick={genSecret}>Generate</button></div></div>
-          <div className="field"><label className="lbl">Script</label>
+      <b>🔗 Drive script</b> <span className="small muted">— connects this Gmail's Drive (no Google Cloud / API key)</span>
+      <ol className="small" style={{ lineHeight: 1.8, paddingLeft: 18, margin: "8px 0" }}>
+        <li>Click <b>📋 Copy script</b>.</li>
+        <li>Open <a href="https://script.google.com/home/projects/create" target="_blank" rel="noreferrer">script.google.com → New project</a> with <b>this Drive's Gmail</b>, delete the sample code, paste, 💾 <b>Save</b>.</li>
+        <li><b>Deploy → New deployment</b> → type <b>Web app</b> → Execute as <b>Me</b> → Who has access <b>Anyone</b> → <b>Deploy</b> → <b>Authorize</b> (Advanced → Go to … → Allow).</li>
+        <li>Copy the <b>Web app URL</b> (ends with <code>/exec</code>), paste it below, click <b>Test</b>.</li>
+      </ol>
+      <div className="grid2">
+        <div className="field"><label className="lbl">Secret (already inside the copied script)</label>
+          <div className="row" style={{ flexWrap: "nowrap" }}>
+            <input className="input" value={secret} onChange={(e) => setEdit({ ...edit, [secretKey]: e.target.value })} />
+            <button type="button" className="btn sm" onClick={() => setEdit({ ...edit, [secretKey]: newSecret() })}>New</button>
+          </div></div>
+        <div className="field"><label className="lbl">Script</label>
+          <div className="row">
             <button type="button" className="btn sm gold" onClick={copy} disabled={!secret}>{copied ? "✓ Copied" : "📋 Copy script"}</button>
-            {!secret && <div className="small muted">Generate a secret first</div>}</div>
+            <button type="button" className="btn sm" onClick={() => setShow(!show)}>{show ? "Hide code" : "Show code"}</button>
+          </div></div>
+      </div>
+      {show && <pre className="code">{code}</pre>}
+      <div className="field" style={{ marginBottom: 0 }}><label className="lbl">Web app URL</label>
+        <div className="row" style={{ flexWrap: "nowrap" }}>
+          <input className="input" value={url} onChange={(e) => setEdit({ ...edit, [urlKey]: e.target.value })} placeholder="https://script.google.com/macros/s/…/exec" />
+          <button type="button" className="btn sm" onClick={test} disabled={!url}>Test</button>
         </div>
-        <div className="field"><label className="lbl">Web app URL</label>
-          <div className="row" style={{ flexWrap: "nowrap" }}><input className="input" value={edit.upload_script_url || ""} onChange={(e) => setEdit({ ...edit, upload_script_url: e.target.value })} placeholder="https://script.google.com/macros/s/…/exec" />
-            <button type="button" className="btn sm" onClick={test} disabled={!edit.upload_script_url}>Test</button></div>
-          {ping && <div className="small" style={{ marginTop: 4 }}>{ping}</div>}
-        </div>
-        <details className="small"><summary>Show script code</summary><pre className="code">{code}</pre></details>
-      </>}
+        {ping && <div className="small" style={{ marginTop: 4 }}>{ping}</div>}
+        <div className="small muted" style={{ marginTop: 4 }}>If you change the secret later, paste the script again and create a new deployment.</div>
+      </div>
     </div>
   );
 }
